@@ -1,76 +1,77 @@
 pipeline {
     agent any
+    
+    environment {
+        STABLE_VERSION = ''
+    }
+    
     stages {
-        stage('Checkout') {
-            steps {
-                echo 'Fetching code from GitHub'
-                git branch: 'main', url: 'https://github.com/YOUR_USERNAME/my-first-pipeline.git'
-            }
-        }
         stage('Backup Previous Version') {
             steps {
                 script {
-                    // Tag previous working version as "stable"
-                    sh '''
-                        git tag -f stable-backup || true
-                        git push origin stable-backup --force || true
-                    '''
-                    echo '✅ Previous version backed up as stable-backup'
+                    // Get previous stable commit
+                    STABLE_VERSION = sh(script: 'git log --format="%H" -n 2 origin/main | tail -1 || echo "HEAD~1"', returnStdout: true).trim()
+                    echo "✅ Backup version: ${STABLE_VERSION}"
                 }
             }
         }
+        
         stage('Test') {
             steps {
                 echo 'Running tests...'
-                sh 'echo "All tests PASSED" || exit 1'  // Replace with real tests
+                sh '''
+                    echo "Running tests..."
+                    sleep 2
+                    # Simulate test failure - remove this line to pass
+                    # exit 1
+                '''
             }
         }
+        
         stage('Deploy') {
             steps {
                 script {
-                    try {
-                        echo '🚀 Deploying new version...'
-                        sh '''
-                            # Simulate deployment (replace with your deploy command)
-                            echo "Deploying v$(date +%s)" > /tmp/app-version.txt
-                            echo "✅ DEPLOYMENT SUCCESS"
-                        '''
-                    } catch (Exception e) {
-                        echo "❌ DEPLOYMENT FAILED: ${e.getMessage()}"
-                        error "Deployment failed - triggering rollback"
-                    }
+                    echo '🚀 Deploying NEW version...'
+                    sh '''
+                        # Simulate deployment
+                        echo "NEW VERSION $(date)" > /tmp/deployed-version.txt
+                        echo "Deployment to production ✅"
+                    '''
+                }
+            }
+        }
+        
+        stage('Health Check') {
+            steps {
+                script {
+                    // Simulate health check failure
+                    def health = sh(script: 'cat /tmp/deployed-version.txt', returnStdout: true).trim()
+                    echo "Health check: ${health}"
+                    // Uncomment to test rollback:
+                    // error("Health check failed!")
                 }
             }
         }
     }
+    
     post {
         failure {
-            stage('Rollback') {
-                steps {
-                    script {
-                        echo '🔄 ROLLING BACK to stable-backup...'
-                        sh '''
-                            # Revert to last working version
-                            git reset --hard stable-backup
-                            git clean -fd
-                            # Re-deploy stable version
-                            echo "Reverted to stable-backup" > /tmp/app-version.txt
-                            echo "✅ ROLLBACK COMPLETE"
-                        '''
-                    }
-                }
+            script {
+                echo '🔄 AUTO ROLLBACK to previous stable version...'
+                sh """
+                    echo "ROLLING BACK to ${STABLE_VERSION}"
+                    git reset --hard ${STABLE_VERSION}
+                    echo "STABLE VERSION restored" > /tmp/deployed-version.txt
+                    echo "✅ Rollback complete!"
+                """
             }
         }
         success {
-            stage('Promote Stable') {
-                steps {
-                    sh 'git tag -f stable && git push origin stable --force'
-                    echo '🎉 New version promoted to stable!'
-                }
-            }
+            echo '🎉 Deployment successful - promoting to stable!'
+            sh 'echo "SUCCESS $(date)" > /tmp/deployed-version.txt'
         }
         always {
-            sh 'cat /tmp/app-version.txt || echo "No version file"'
+            sh 'cat /tmp/deployed-version.txt || echo "No deployment file"'
         }
     }
 }
